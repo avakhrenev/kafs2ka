@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration>
+  <Appenders>
+    <File name="File" fileName="E:\\doc\\programming\\github\\kafs2ka\\target\\logs\\kafs2ka-2-test.log" append="false">
+      <PatternLayout pattern="%d{HH:mm:ss.SSS} [%-5p] %c{1} - %m%n"/>
+    </File>
+  </Appenders>
+  <Loggers>
+    <Logger name="org.apache" level="debug" additivity="false">
+      <AppenderRef ref="File"/>
+    </Logger>
+    <Root level="info">
+      <AppenderRef ref="File"/>
+    </Root>
+  </Loggers>
+</Configuration>

@@ -5,7 +5,7 @@ import utest._
 object BrokerStartTest extends TestSuite{
   val kafka = new RunningKafka(true)
 
-  val tests = this{
+  override val tests = this{
 
     'close {
       kafka.close()
