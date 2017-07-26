@@ -4,17 +4,17 @@ import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
-import fs2.{Chunk, Segment}
+import fs2._
 import kafka.message.{ByteBufferMessageSet, Message => KMessage}
 import org.apache.kafka.clients.producer.ProducerRecord
-import org.apache.kafka.common.utils.ByteUtils
 import utest._
 
 object SerializeTest extends TestSuite {
   type Record = ProducerRecord[Array[Byte], Array[Byte]]
 
   implicit def byteArrayToByteBuffer(arr: Array[Byte]): ByteBuffer = ByteBuffer.wrap(arr)
-  def utf8(str: String): Array[Byte]                               = str.getBytes(StandardCharsets.UTF_8)
+  def utf8(str: String): Array[Byte] =
+    if (str ne null) str.getBytes(StandardCharsets.UTF_8) else null
 
   def record(key: String, value: String, timestamp: Option[Long]): Record =
     new Record("blah", 0, timestamp.map(java.lang.Long.valueOf).orNull, utf8(key), utf8(value))
@@ -32,7 +32,6 @@ object SerializeTest extends TestSuite {
     dos.flush()
     Chunk.bytes(bao.toByteArray)
   }
-
 
   override val tests = this {
     'encode {
@@ -66,27 +65,45 @@ object SerializeTest extends TestSuite {
       }
     }
     'decode {
-      'zigzag {
-        val seg = dataOutputSegment{dao => ByteUtils.writeVarlong(123, dao); ByteUtils.writeVarlong(567, dao)}
-        def readBytes(segment: Segment[Byte, Unit]): Vector[Long] = {
-          def go(seg: Segment[Byte, Unit], acc: Vector[Long]): Segment[Unit, (Vector[Long], (Long, Long))] =
-          Primitives.readVarlong(segment).mapResult{
-            case Left((_, r)) => acc -> r
-            case Right((l, seg)) => go(seg, acc :+ l).run
-          }
-          go(segment, Vector.empty).run._1
+      "length delimited" - {
+        def write(corrId: Int, str: String): Chunk[Byte] = {
+          val bb      = new ByteArrayOutputStream()
+          val out     = new DataOutputStream(bb)
+          val content = str.getBytes(StandardCharsets.UTF_8)
+          out.writeInt(4 + content.length)
+          out.writeInt(corrId)
+          out.write(content)
+          out.flush()
+          Chunk.bytes(bb.toByteArray)
         }
-        def splitted(n: Int, seg: Segment[Byte, Unit]): Segment[Byte, Unit] = {
-          val s = seg.splitAt(n).right.get
-          Segment.catenated(s._1) ++ s._2
+
+        def readByteByffer(bb: ByteBuffer): String = {
+          val bytes = new Array[Byte](bb.remaining())
+          bb.get(bytes)
+          new String(bytes, StandardCharsets.UTF_8)
         }
-        println(seg)
-        'o {readBytes(seg) ==> Vector(123L, 567L)}
-        'a {readBytes(splitted(1, seg)) ==> Vector(123L, 567L)}
-        'b {readBytes(splitted(2, seg)) ==> Vector(123L, 567L)}
-        'c {readBytes(splitted(3, seg)) ==> Vector(123L, 567L)}
-        'd {readBytes(splitted(4, seg)) ==> Vector(123L, 567L)}
-        'e {readBytes(splitted(5, seg)) ==> Vector(123L, 567L)}
+
+        def stream(chSize: Int) =
+          Stream(write(1, "abc"), write(15, "def"), write(30, "ABCDEF"))
+            .flatMap(Stream.chunk)
+            .segmentN(chSize, allowFewer = true)
+            .flatMap(s => Stream.chunk(s.toChunk))
+        def result(s: Stream[Pure, Byte]): Vector[(Int, String)] =
+          s.through(Primitives.readKafkaResponses[Pure])
+            .map { case (a, b) => a -> readByteByffer(b) }
+            .toVector
+
+        def check(x: Int) = {
+          val expected = Vector(1 -> "abc", 15 -> "def", 30 -> "ABCDEF")
+          val actual   = result(stream(x))
+          actual ==> expected
+        }
+        'chunk100 (check(100))
+        'chunk10 (check(10))
+        'chunk5 (check(5))
+        'chunk3 (check(3))
+        'chunk2 (check(2))
+        'chunk1 (check(1))
       }
     }
 

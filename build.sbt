@@ -34,8 +34,8 @@ lazy val kafs2ka = (
   , libraryDependencies ++= Seq(
       "co.fs2"           %% "fs2-core"       % "0.10.0-M4"
     , "co.fs2"           %% "fs2-io"         % "0.10.0-M4"
+    , "org.apache.kafka"  % "kafka-clients"  % "0.11.0.0"
     , "org.apache.kafka" %% "kafka"          % "0.11.0.0"  % Test
-    , "org.apache.kafka"  % "kafka-clients"  % "0.11.0.0"  % Test
     , "com.lihaoyi"      %% "utest"          % "0.4.8"     % Test
     )
   , fork in Test := true
