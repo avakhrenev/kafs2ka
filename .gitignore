@@ -1,6 +1,9 @@
 *.class
 *.log
 
+.gcroots/
+.bloop/
+
 # sbt specific
 .cache
 .history
@@ -22,3 +25,4 @@ project/plugins/project/
 *.iws
 /out/
 .idea_modules/
+
