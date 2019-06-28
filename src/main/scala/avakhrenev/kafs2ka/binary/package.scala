@@ -2,7 +2,6 @@ package avakhrenev.kafs2ka
 
 import java.nio.charset.StandardCharsets
 
-import avakhrenev.kafs2ka.binary.Decoder.{int32, takeElements}
 import cats.data.Chain
 
 import scala.{specialized => sp}
@@ -115,14 +114,12 @@ package object binary {
             }
           }
 
-        inProgress(decoder.expected) { ch =>
-          go(length, decoder, ch)
-        }
+        go(length, decoder, ch)
       }
 
-    val int16: Decoder[Int] = takeBytes(16).map(c => c(0) << 8 | (c(1) & 0xFF))
+    val int16: Decoder[Int] = takeBytes(2).map(c => c(0) << 8 | (c(1) & 0xFF))
     val int32: Decoder[Int] =
-      takeBytes(32).map(c => c(0) << 24 | (c(1) & 0xFF) << 16 | (c(2) & 0xFF) << 8 | (c(3) & 0xFF))
+      takeBytes(4).map(c => c(0) << 24 | (c(1) & 0xFF) << 16 | (c(2) & 0xFF) << 8 | (c(3) & 0xFF))
     val string: Decoder[String] =
       lengthDelimited(int16).map(c => new String(c.toArray, StandardCharsets.UTF_8))
     val stringOpt: Decoder[Option[String]] =
