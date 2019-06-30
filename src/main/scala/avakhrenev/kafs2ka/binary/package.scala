@@ -6,10 +6,11 @@ import cats.data.Chain
 
 import scala.{specialized => sp}
 import fs2.Chunk
-import io.estatico.newtype.macros.newtype
+import io.estatico.newtype.macros.{newsubtype, newtype}
 
 import scala.annotation.tailrec
 import scala.collection.mutable
+import scala.concurrent.duration.FiniteDuration
 
 package object binary {
   // Decoding run: current state of the parser
@@ -119,9 +120,15 @@ package object binary {
         go(length, decoder, ch)
       }
 
+    val int8: Decoder[Int]  = takeBytes(1).map(c => c(0))
     val int16: Decoder[Int] = takeBytes(2).map(c => c(0) << 8 | (c(1) & 0xFF))
     val int32: Decoder[Int] =
       takeBytes(4).map(c => c(0) << 24 | (c(1) & 0xFF) << 16 | (c(2) & 0xFF) << 8 | (c(3) & 0xFF))
+    val int64: Decoder[Long] =
+      takeBytes(8).map(c =>
+        c(0).toLong << 56 | (c(1).toLong & 0xFF) << 48 | (c(2).toLong & 0xFF) << 40 | (c(3).toLong & 0xFF) << 32 |
+          (c(4).toLong & 0xFF) << 24 | (c(5).toLong & 0xFF) << 16 | (c(6).toLong & 0xFF) << 8 |
+          (c(7).toLong & 0xFF))
     val string: Decoder[String] =
       lengthDelimited(int16).map(c => new String(c.toArray, StandardCharsets.UTF_8))
     val stringOpt: Decoder[Option[String]] =
@@ -172,7 +179,9 @@ package object binary {
   }
   object Encoder {
     implicit def encoderFromCodec[M](implicit codec: Codec[M]): Encoder[M] = codec.enc
-    implicit val encoderForChunk: Encoder[Chunk[Byte]] = Encoder.apply(Enc.chunk)
+    implicit val encoderForChunk: Encoder[Chunk[Byte]]                     = Encoder.apply(Enc.chunk)
+
+    val int8: Encoder[Int] = Encoder[Int](value => Enc.chunk(Chunk.singleton(value.toByte)))
 
     val int16: Encoder[Int] = Encoder[Int](
       value =>
@@ -189,6 +198,20 @@ package object binary {
           Chunk.bytes(
             Array(
                 (value >> 24).toByte
+              , (value >> 16).toByte
+              , (value >> 8).toByte
+              , value.toByte
+            ))))
+    val int64: Encoder[Long] = Encoder[Long](
+      value =>
+        Enc.chunk(
+          Chunk.bytes(
+            Array(
+                (value >> 56).toByte
+              , (value >> 48).toByte
+              , (value >> 40).toByte
+              , (value >> 32).toByte
+              , (value >> 24).toByte
               , (value >> 16).toByte
               , (value >> 8).toByte
               , value.toByte
@@ -243,16 +266,32 @@ package object binary {
                Encoder.lengthDelimited(length.enc).contramap[A](encA.encode))
     }
 
+    val int8: Codec[Int]                 = Codec(Decoder.int8, Encoder.int8)
     val int16: Codec[Int]                = Codec(Decoder.int16, Encoder.int16)
     val int32: Codec[Int]                = Codec(Decoder.int32, Encoder.int32)
+    val int64: Codec[Long]               = Codec(Decoder.int64, Encoder.int64)
     val string: Codec[String]            = Codec(Decoder.string, Encoder.string)
     val stringOpt: Codec[Option[String]] = Codec(Decoder.stringOpt, Encoder.stringOpt)
-    def arrayOf[A](codec: Codec[A]): Codec[Chunk[A]] =
+    def arrayOf[A](implicit codec: Codec[A]): Codec[Chunk[A]] =
       Codec(Decoder.arrayOf(codec.dec), Encoder.arrayOf(codec.enc))
+
+    def of[A](implicit c: Codec[A]): Codec[A] = c
   }
 
   object ~ {
     @inline def unapply[A, B](arg: (A, B)): Some[(A, B)] = Some(arg)
+  }
+
+  @newsubtype final case class DurationMs(ms: Int) {
+    def toFiniteDuration: FiniteDuration = {
+      import concurrent.duration._
+      ms.toLong.millis
+    }
+  }
+
+  object DurationMs {
+    import _root_.io.estatico.newtype.ops._
+    implicit val codec: Codec[DurationMs] = Codec.int32.coerce[Codec[DurationMs]]
   }
 
 }
