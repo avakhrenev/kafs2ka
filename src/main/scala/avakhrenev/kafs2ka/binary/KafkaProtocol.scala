@@ -10,13 +10,15 @@ object KafkaProtocol {
   object CorrId {
     val codec: Codec[CorrId] = Codec.int32.coerce[Codec[CorrId]]
   }
-  sealed abstract class ApiKey(val key: Int)
+  sealed abstract class ApiKey(val key: Int, val version: Int)
   object ApiKey {
-    object ApiVersions extends ApiKey(key = 18)
+    import Codec._
+    object ApiVersions0 extends ApiKey(key = 18, 0)
 
-    val codec: Codec[ApiKey] = Codec.int16.emap[ApiKey] {
-      case ApiVersions.key => Right(ApiVersions)
-    }(_.key)
+    val codec: Codec[ApiKey] = (int16 ~ int16).emap[ApiKey] {
+      case ApiVersions0.key ~ ApiVersions0.version => Right(ApiVersions0)
+      case key ~ version                           => Left(s"Unknown Api key: $key, ver: $version")
+    }(a => a.key -> a.version)
 
   }
 
@@ -40,7 +42,6 @@ object KafkaProtocol {
     Codec[Enc](Decoder(Int.MaxValue, c => DecRun.pure(Enc.chunk(c))), Encoder(identity))
 
   final case class RequestFrame(key: ApiKey,
-                                version: Int,
                                 correlationId: CorrId,
                                 clientId: Option[String],
                                 payload: Enc)
@@ -60,16 +61,16 @@ object KafkaProtocol {
      */
     val codec: Codec[RequestFrame] = lengthDelimited[RequestFrame](
         int32
-      , (ApiKey.codec ~ int16 ~ CorrId.codec ~ stringOpt ~ payload).xmap {
-        case key ~ version ~ corrId ~ clientId ~ payload =>
-          RequestFrame(key, version, corrId, clientId, payload)
-      }(k => k.key -> k.version -> k.correlationId -> k.clientId -> k.payload)
+      , (ApiKey.codec ~ CorrId.codec ~ stringOpt ~ payload).xmap {
+        case key ~ corrId ~ clientId ~ payload =>
+          RequestFrame(key, corrId, clientId, payload)
+      }(k => k.key -> k.correlationId -> k.clientId -> k.payload)
     )
   }
   final case class ResponseFrame(correlationId: CorrId, payload: Enc)
   object ResponseFrame {
     import Codec._
-    val codec: Codec[ResponseFrame] = lengthDelimited[ResponseFrame](
+    implicit val codec: Codec[ResponseFrame] = lengthDelimited[ResponseFrame](
         int32
       , (CorrId.codec ~ payload).xmap {
         case corrId ~ payload =>
@@ -90,9 +91,12 @@ object KafkaProtocol {
     max_version => INT16
 
      */
-    val codec: Codec[ApiVersionsResponse] = (int16 ~ arrayOf(int16 ~ int16 ~ int16)).xmap {
+    implicit val codec: Codec[ApiVersionsResponse] = (int16 ~ arrayOf(int16 ~ int16 ~ int16)).xmap {
       case error ~ versions => ApiVersionsResponse(error, versions)
     }(r => r.errorCode -> r.versions)
   }
+
+  final case class FetchReq0()
+  final case class FetchResp0()
 
 }

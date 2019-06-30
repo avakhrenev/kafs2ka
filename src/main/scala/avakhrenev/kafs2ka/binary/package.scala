@@ -59,6 +59,8 @@ package object binary {
     def ~[@sp(Int, Short) B](b: Decoder[B]): Decoder[(A, B)] = flatMap(a => b.map(b => a -> b))
   }
   object Decoder {
+    //ToDo WHY Y NO WORK??!!
+    implicit def decoderFromCodec[M](implicit codec: Codec[M]): Decoder[M] = codec.dec
     import DecRun._
     def takeBytes(length: Int): Decoder[Chunk[Byte]] = {
 
@@ -169,6 +171,9 @@ package object binary {
     }
   }
   object Encoder {
+    implicit def encoderFromCodec[M](implicit codec: Codec[M]): Encoder[M] = codec.enc
+    implicit val encoderForChunk: Encoder[Chunk[Byte]] = Encoder.apply(Enc.chunk)
+
     val int16: Encoder[Int] = Encoder[Int](
       value =>
         Enc.chunk(
